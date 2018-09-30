@@ -4,6 +4,7 @@ gradle
 gradlew
 gradlew.bat
 out
+build
 
 # Created by https://www.gitignore.io/api/macos,windows
 
