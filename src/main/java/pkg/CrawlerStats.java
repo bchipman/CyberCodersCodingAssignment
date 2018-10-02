@@ -2,6 +2,11 @@ package pkg;
 
 import java.util.concurrent.TimeUnit;
 
+/**
+ * @author Brian Chipman
+ *
+ * This class holds the number of successful, failed, and total requests done by {@link Crawler}.
+ */
 public class CrawlerStats {
 
    private int successfulRequestCount;
@@ -15,7 +20,7 @@ public class CrawlerStats {
    public CrawlerStats() {
    }
 
-   public void increment(boolean successful) {
+   public void increment(final boolean successful) {
       if (successful) {
          successfulRequestCount++;
       }
@@ -23,6 +28,22 @@ public class CrawlerStats {
          failedRequestCount++;
       }
       totalRequestCount++;
+   }
+
+   public int getSuccessfulRequestCount() {
+      return successfulRequestCount;
+   }
+
+   public int getFailedRequestCount() {
+      return failedRequestCount;
+   }
+
+   public int getTotalRequestCount() {
+      return totalRequestCount;
+   }
+
+   public long getCrawlTimeMillis() {
+      return crawlTimeMillis;
    }
 
    public void setCrawlTimeMillis(final long crawlTimeMillis) {

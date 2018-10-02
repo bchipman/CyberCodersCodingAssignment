@@ -7,6 +7,11 @@ import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
 
+/**
+ * @author Brian Chipman
+ *
+ * This is a quickly implemented FIFO queue which contains only unique elements.
+ */
 public class UniqueQueue<T> implements Queue<T> {
 
    private final Queue<T> queue = new LinkedList<>();
@@ -60,7 +65,7 @@ public class UniqueQueue<T> implements Queue<T> {
 
    @Override
    public boolean containsAll(final Collection<?> c) {
-      return queue.containsAll(c);
+      return set.containsAll(c);
    }
 
    @Override

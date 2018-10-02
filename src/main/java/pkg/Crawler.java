@@ -4,7 +4,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -16,41 +15,42 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
+/**
+ * @author Brian Chipman
+ * This class implements the actual web crawler.
+ */
 public class Crawler {
 
    private static final Logger LOG = LoggerFactory.getLogger(Crawler.class);
 
-   private final String startingPointUrl;
+   private static final JsonParser JSON_PARSER = new JsonParser();
 
-   private final Queue<String> linksQueue;
+   private String startingPointUrl;
 
-   private final Set<String> visitedLinks;
+   protected Queue<String> linksQueue = new UniqueQueue<>();
 
-   private final CrawlerStats crawlerStats;
+   protected Set<String> visitedLinks = new HashSet<>();
+
+   protected final CrawlerStats crawlerStats = new CrawlerStats();
 
    public Crawler(final String startingPointUrl) {
       this.startingPointUrl = startingPointUrl;
-      this.linksQueue = new UniqueQueue<>();
-      this.visitedLinks = new HashSet<>();
-      crawlerStats = new CrawlerStats();
       getStartingLinks();
    }
 
+   /**
+    * This method obtains the JSON data found at the starting point URL and adds each URL to the linksQueue object.
+    * Note that since linksQueue is a custom UniqueQueue object, only unique URLs will be added; duplicate URLs will
+    * be ignored.
+    */
    private void getStartingLinks() {
       try {
-         final String jsonText = Jsoup.connect(startingPointUrl).ignoreContentType(true).execute().body();
-         final JsonParser jsonParser = new JsonParser();
-         final JsonObject jsonObject = jsonParser.parse(jsonText).getAsJsonObject();
+         final String jsonText = getJsonStringFromUrl(startingPointUrl);
+         final JsonObject jsonObject = JSON_PARSER.parse(jsonText).getAsJsonObject();
          final JsonArray jsonLinks = jsonObject.getAsJsonArray("links");
          for (final JsonElement jsonLink : jsonLinks) {
             linksQueue.add(jsonLink.getAsString());
@@ -61,19 +61,19 @@ public class Crawler {
       }
    }
 
+   /**
+    * This method iterates through all links in linksQueue, finding all links on a page and adding them back to
+    * linksQueue if they have not been seen before and are not already in linksQueue.  Crawler stats are incremented
+    * appropriately depending on if the link was able to be visited or not.
+    */
    public void crawl() {
       final long startTimeMillis = System.currentTimeMillis();
       while (!linksQueue.isEmpty()) {
          final String link = linksQueue.remove();
          try {
-            if (visitedLinks.contains(link)) {
-               LOG.trace("Skipping this link since it was already visited: " + link);
-               continue;
-            }
             visitedLinks.add(link);
 
-            final Document document = Jsoup.connect(link).get();
-            final Elements linkElements = document.select("a[href]");
+            final Elements linkElements = getLinkElementsFromUrl(link);
             LOG.debug("Successfully crawled to this link: " + link);
             crawlerStats.increment(true);
             addPageLinksToQueue(linkElements, link);
@@ -93,7 +93,14 @@ public class Crawler {
       crawlerStats.setCrawlTimeMillis(System.currentTimeMillis() - startTimeMillis);
    }
 
-   private void addPageLinksToQueue(final Elements linkElements, final String currentLink) {
+   /**
+    * This method iterates through the Elements object and adds any URL to the linksQueue object which is not already
+    * in the linksQueue and has not already been visited.
+    *
+    * @param linkElements Elements object containing all a[href] objects found at the current loation.
+    * @param currentLink String representing the current URL location.
+    */
+   protected void addPageLinksToQueue(final Elements linkElements, final String currentLink) {
       for (final Element linkElement : linkElements) {
          final String newLink = createAbsoluteUrlFromRelative(currentLink, linkElement.attr("href"));
          if (newLink != null && !linksQueue.contains(newLink) && !visitedLinks.contains(newLink)) {
@@ -103,8 +110,26 @@ public class Crawler {
       }
    }
 
-   private String createAbsoluteUrlFromRelative(final String currentUrl, final String relativeUrl) {
+   /**
+    * This method converts a relative URL to an absolute URL which is necessary for Jsoup to connect with.
+    * If relativeUrl is already an absolute URL, relativeUrl will be returned.
+    *
+    * @param currentUrl String representing the current URL location
+    * @param relativeUrl String representing a relative URL
+    * @return String representing the absolute URL of the provided relative URL
+    */
+   protected String createAbsoluteUrlFromRelative(final String currentUrl, final String relativeUrl) {
       try {
+         // try to create URL from relative URL.  If successful, relativeUrl is already an absolute URL.
+         new URL(relativeUrl);
+         return relativeUrl;
+      }
+      catch (MalformedURLException e) {
+         LOG.trace("Unable to create absolute URL from relative URL", e);
+      }
+
+      try {
+         // construct absolute URL from protocol and host of currentUrl + relativeUrl
          final URL url = new URL(currentUrl);
          return url.getProtocol() + "://" + url.getHost() + relativeUrl;
       }
@@ -114,13 +139,38 @@ public class Crawler {
       }
    }
 
-   public void printStartingLinks() {
-      for (final String link : linksQueue) {
-         LOG.debug(link);
-      }
-   }
-
+   /**
+    * This is a convenience method to print all crawler statistics obtained.
+    */
    public void printStats() {
       LOG.info(crawlerStats.toString());
    }
+
+   /**
+    * This method uses Jsoup to connect to the provided URL and return a string representation of the JSON object
+    * located at the URL.
+    * This code was extracted in order to be overriden in unit tests to make testing easier.
+    *
+    * @param url The URL for the JSON object
+    * @return string representation of the JSON found at the URL
+    * @throws IOException if fails to get the JSON string from the URL
+    */
+   protected String getJsonStringFromUrl(final String url) throws IOException {
+      return Jsoup.connect(url).ignoreContentType(true).execute().body();
+   }
+
+   /**
+    * This method uses Jsoup to connect to the provided URL and return a Jsoup Elements object containing all a[href]
+    * objects found at the URL.
+    * This code was extracted in order to be overriden in unit tests to make testing easier.
+    *
+    * @param url The URL to navigate to.
+    * @return Jsoup Elements object containing all found a[href] objects (i.e. links).
+    * @throws IOException
+    */
+   protected Elements getLinkElementsFromUrl(final String url) throws IOException {
+      final Document document = Jsoup.connect(url).get();
+      return document.select("a[href]");
+   }
+
 }
